@@ -5,29 +5,51 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
+
 
 // Function declarations.
-int scan_port(int port);
+int scan_port(void* port_pointer);
 
 int main()
 {
+	int min_port;
+	int max_port;
 
-	int scan_socket;
-	if ( (scan_socket = scan_port(22) ) == -1)
+	min_port = 1;
+	max_port = 100;
+
+	pthread_t thread_ids[max_port - min_port];
+	int* ports[max_port - min_port];
+	for (int i = 0; i <= max_port-min_port; i++)
 	{
-		puts("No contact with port 22\n");
+		ports[i] = malloc(sizeof(int));
+		*ports[i] = i + min_port;
+		if (pthread_create(&thread_ids[i], NULL, scan_port, (void *) ports[i]) != 0)
+		{
+			printf("Failed to create thread %d", i+min_port);
+		}
 	}
-	if ( (scan_socket = scan_port(21) ) == -1)
+
+
+	for (int i = 0; i <= max_port-min_port; i++)
 	{
-		puts("No contact with port 21\n");
+		errno = 0;
+		if (pthread_join(thread_ids[i],NULL) != 0 && errno != 0)
+		{
+			perror("join: ");
+		}
+		free((void *) ports[i]);
+		ports[i] = NULL;
 	}
 	return 0;
 }
 
-int scan_port(int port)
+int scan_port(void* port_pointer)
 {
+	int port = *(int *) port_pointer;
 	int new_socket;
-	errno = 0; // Errno must be locked for multithreading 
+	errno = 0;
 	if ( (new_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
 		close(new_socket);
@@ -43,27 +65,30 @@ int scan_port(int port)
 	errno = 0;
 	if (connect(new_socket, (struct sockaddr *) &bind_address, sizeof(bind_address)) < 0)
 	{
-		sprintf(stderr, "Could not connect to port %d", port);
+		//printf("Could not connect to port %d\n", port);
 		close(new_socket);
 		return -1;
 	}
 	char send_string[13] = "Hello World!";
 	char read_string[101];
+
 	errno = 0;
 	if (write(new_socket, &send_string, 20) == -1)
 	{
 		perror("Write: ");
+		close(new_socket);
 		return -1;
 	}
 	errno = 0;
 	if (read(new_socket, read_string,100) == -1)
 	{
 		perror("Read: ");
+		close(new_socket);
 		return -1;
 	}
-	read_string[100] == '\0';
+	read_string[100] = '\0';
+	printf("Port %d: ", port);
 	puts(read_string);
-
 	close(new_socket);
 	return 1;
 }
